@@ -14,7 +14,8 @@
 	if (ret < 0) \
 		return ret; \
 } while (0)
-# define GOTO_IF_ERR(x, ret, label) do { \
+
+#define GOTO_IF_ERR(x, ret, label) do { \
 	ret = (x); \
 	if (ret < 0) \
 		goto label; \
@@ -32,13 +33,13 @@ int parse_args(char **raw_cmd_ptr, char ***args_ptr)
 	if (strlen(*raw_cmd_ptr) > _POSIX_ARG_MAX)
 		return -EINVAL;
 
-	*args_ptr = (char **) malloc(sizeof(char *)*args_size);
+	*args_ptr = (char **)malloc(sizeof(char *)*args_size);
 	token = strtok(*raw_cmd_ptr, delimiter);
 
 	while (token) {
 		if (args_len+1 > args_size) {
 			args_size *= 2;
-			*args_ptr = (char **) malloc(sizeof(char *)*args_size);
+			*args_ptr = (char **)malloc(sizeof(char *)*args_size);
 		}
 		arg = malloc(strlen(token));
 		if (!arg)
@@ -53,16 +54,27 @@ int parse_args(char **raw_cmd_ptr, char ***args_ptr)
 	return 0;
 }
 
-void free_args(char **args)
+void free_args(char ***args_ptr)
 {
 	char **arg_ptr;
 
-	for (arg_ptr = args; *arg_ptr != NULL; arg_ptr++) {
+	if (!*args_ptr)
+		return;
+
+	for (arg_ptr = *args_ptr; *arg_ptr; arg_ptr++) {
 		free(*arg_ptr);
 		*arg_ptr = NULL;
 	}
-	free(args);
-	args = NULL;
+	free(args_ptr);
+	*args_ptr = NULL;
+}
+
+void free_resources(char ***args_ptr, char **raw_cmd_ptr) {
+	if (*raw_cmd_ptr) {
+		free(*raw_cmd_ptr);
+		*raw_cmd_ptr = NULL;
+	}
+	free_args(args_ptr);
 }
 
 void signal_handler(int signum)
@@ -100,7 +112,7 @@ int read_input(char **raw_cmd_ptr)
 	int raw_cmd_size = 1024;
 
 	*raw_cmd_ptr = malloc(raw_cmd_size);
-	unblock_sigint();
+	RET_IF_ERR(unblock_sigint());
 	while ((ch = getchar()) != EOF && !is_end) {
 		RET_IF_ERR(ch);
 		RET_IF_ERR(block_sigint());
@@ -146,6 +158,7 @@ int main(int argc, char *argv[])
 		GOTO_IF_ERR(read_input(&raw_cmd), ret, err);
 		if (strncmp(raw_cmd, "\n", 1) == 0) {
 			free(raw_cmd);
+			raw_cmd = NULL;
 			continue;
 		}
 		GOTO_IF_ERR(parse_args(&raw_cmd, &args), ret, err);
@@ -167,14 +180,13 @@ int main(int argc, char *argv[])
 		if (pid != -1)
 			GOTO_IF_ERR(wait(NULL), ret, err);
 
-		free(raw_cmd);
-		free_args(args);
+		free_resources(&args, &raw_cmd);
 		GOTO_IF_ERR(printf("\n"), ret, err);
-
 	}
 
 	exit(0);
 err:
+	free_resources(&args, &raw_cmd);
 	fprintf(stderr, "error: %s\n", strerror(errno));
 	exit(errno);
 }
