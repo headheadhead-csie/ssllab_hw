@@ -173,6 +173,43 @@ int read_input(char **raw_input_ptr)
 	return 0;
 }
 
+int run_cmds(char ***args_arr)
+{
+	int pid;
+	int pipe_fd[2];
+	char ***cmd_window = (char ***)malloc(sizeof(char**) * 3);
+
+	RET_IF_ERR(pipe(pipe_fd));
+	RET_IF_ERR(pid = fork());
+
+	/* Wrong logic, need refinement  */
+	for (cmd_window = args_arr; cmd_window[0]; cmd_window++) {
+		if (cmd_window[1]) {
+			if (!pid) { /* old child */
+				RET_IF_ERR(dup2(pipe_fd[1], 1));
+				RET_IF_ERR(close(pipe_fd[0]));
+				RET_IF_ERR(close(pipe_fd[1]));
+				RET_IF_ERR(execvp(cmd_window[0][0], cmd_window[0]));
+			} else {
+				RET_IF_ERR(pid = fork());
+				if (!pid) /* new chlid */
+					RET_IF_ERR(dup2(pipe_fd[0], 0));
+			}
+			RET_IF_ERR(pipe(pipe_fd));
+		} else if (!pid) { /* old child, the final command */
+			RET_IF_ERR(close(pipe_fd[0]));
+			RET_IF_ERR(close(pipe_fd[1]));
+			RET_IF_ERR(execvp(cmd_window[0][0], cmd_window[0]));
+		}
+		RET_IF_ERR(close(pipe_fd[0]));
+		RET_IF_ERR(close(pipe_fd[1]));
+		if (cmd_window[1])
+			RET_IF_ERR(pipe(pipe_fd));
+	}
+
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
 	int ret, pid;
@@ -200,8 +237,7 @@ int main(int argc, char *argv[])
 		}
 		GOTO_IF_ERR(parse_cmds(raw_input, &args_arr), ret, err);
 
-		free_resources(&args_arr, &raw_input);
-		continue;
+		GOTO_IF_ERR(unblock_sigint(), ret, err);
 		if (strncmp(args[0], "cd", 2) == 0)
 			GOTO_IF_ERR(chdir(args[1]), ret, err);
 		else if (strncmp(args[0], "exit", 4) == 0)
@@ -209,9 +245,7 @@ int main(int argc, char *argv[])
 		else if (strncmp(args[0], "getcpu", 6) == 0)
 			GOTO_IF_ERR(printf("%ld\n", syscall(436)), ret, err);
 		else
-			GOTO_IF_ERR(pid = fork(), ret, err);
-
-		GOTO_IF_ERR(unblock_sigint(), ret, err);
+			GOTO_IF_ERR(run_cmds(args_arr), ret, err);
 
 		/* never return */
 		if (!pid)
