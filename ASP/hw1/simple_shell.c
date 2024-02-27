@@ -23,6 +23,8 @@
 
 static bool is_end;
 static char *cmd_history[10];
+static int cmd_cnt;
+static int pipe_fds[2][2];
 
 int parse_args(char *raw_input, char ***args_ptr)
 {
@@ -46,7 +48,6 @@ int parse_args(char *raw_input, char ***args_ptr)
 			return -errno;
 
 		strcpy(arg, token);
-		fprintf(stderr, "args[%d]: %s\n", args_len, arg);
 		(*args_ptr)[args_len++] = arg;
 		token = strtok(NULL, delimiter);
 	}
@@ -63,7 +64,6 @@ int parse_cmds(char *raw_input, char ****args_arr_ptr)
 
 	*args_arr_ptr = (char ***)malloc(sizeof(char **) * args_arr_size);
 	while ((cmd_token = strsep(&raw_input, pipe_deli))) {
-		fprintf(stderr, "args_arr[%d]: %s\n", args_arr_len, cmd_token);
 		if (args_arr_len+1 >= args_arr_size) {
 			args_arr_size *= 2;
 			*args_arr_ptr = (char ***)realloc(*args_arr_ptr,
@@ -104,8 +104,22 @@ void free_args_arr(char ****args_arr_ptr)
 	*args_arr_ptr = NULL;
 }
 
+int close_all_pipes()
+{
+	if (pipe_fds[0][0] >= 0) {
+		RET_IF_ERR(close(pipe_fds[0][0]));
+		RET_IF_ERR(close(pipe_fds[0][1]));
+	}
+	if (pipe_fds[1][0] >= 0) {
+		RET_IF_ERR(close(pipe_fds[1][0]));
+		RET_IF_ERR(close(pipe_fds[1][1]));
+	}
+	return 0;
+}
+
 void free_resources(char ****args_arr_ptr, char **raw_input_ptr)
 {
+	close_all_pipes();
 	if (*raw_input_ptr) {
 		free(*raw_input_ptr);
 		*raw_input_ptr = NULL;
@@ -173,8 +187,52 @@ int read_input(char **raw_input_ptr)
 	return 0;
 }
 
-int print_history()
+void record_cmd(char *raw_input)
 {
+	if (cmd_cnt >= 0 &&
+		cmd_history[(cmd_cnt-1) % 10] &&
+		strcmp(raw_input, cmd_history[(cmd_cnt-1) % 10]) == 0)
+		return;
+	if (cmd_history[cmd_cnt % 10]) {
+		free(cmd_history[cmd_cnt % 10]);
+	}
+	cmd_history[cmd_cnt++ % 10] = strdup(raw_input);
+}
+
+int print_history(char *args_1)
+{
+	int n = 10;
+
+	if (args_1) {
+		if (strcmp(args_1, "-c") == 0) {
+			for (int i = 0; i < 10; i++) {
+				if (cmd_history[i]) {
+					free(cmd_history[i]);
+					cmd_history[i] = NULL;
+				}
+			}
+			cmd_cnt = 0;
+			return 0;
+		}
+		for (char *ch_ptr = args_1; *ch_ptr; ch_ptr++) {
+			if (!isdigit(*ch_ptr)) {
+				fprintf(stderr, "history: invalid argument \"%s\"\n", args_1);
+				return -EINVAL;
+			}
+		}
+		n = atoi(args_1);
+	}
+
+	n = (n > 10)? 10: n;
+	n = (n > cmd_cnt)? cmd_cnt: n;
+
+	if (n <= 0) {
+		fprintf(stderr, "history: invalid argument \"%s\"\n", args_1);
+		return -EINVAL;
+	}
+	for (int i = cmd_cnt - n; i < cmd_cnt; i++)
+		printf("%5d: %s", i+1, cmd_history[i % 10]);
+
 	return 0;
 }
 
@@ -200,7 +258,7 @@ int run_builtin_cmd(char **args)
 			return CMD_FAIL;
 	} else if (strncmp(args[0], "history", 6) == 0) {
 		if (argc <= 2)
-			return print_history();
+			return print_history(args[1]);
 		else
 			return CMD_FAIL;
 	} else {
@@ -213,13 +271,13 @@ int run_builtin_cmd(char **args)
 int run_cmds(char ***args_arr)
 {
 	int pid, ret, proc_cnt = 0;
-	int pipe_fds[2][2] = {{-1, -1}, {-1, -1}};
 	int *pipe_fd_prev = pipe_fds[0], *pipe_fd_next = pipe_fds[1], *tmp;
 	char ***cmd_window;
 
+	memset(pipe_fds, -1, sizeof(pipe_fds[0][0]) * 4);
 	RET_IF_ERR(pipe(pipe_fd_next));
 
-	for (cmd_window = args_arr; cmd_window[0]; cmd_window++) {
+	for (cmd_window = args_arr; cmd_window[0] && !is_end; cmd_window++) {
 		ret = run_builtin_cmd(cmd_window[0]);
 		if (ret == CMD_EXIT) {
 			break;
@@ -241,7 +299,7 @@ int run_cmds(char ***args_arr)
 			} else if (pipe_fd_prev[0] >= 0) {
 				RET_IF_ERR(close(pipe_fd_prev[0]));
 				RET_IF_ERR(close(pipe_fd_prev[1]));
-				pipe_fd_prev[1] = pipe_fd_prev[1] = -1;
+				pipe_fd_prev[1] = pipe_fd_prev[0] = -1;
 			}
 			proc_cnt++;
 		}
@@ -251,16 +309,9 @@ int run_cmds(char ***args_arr)
 		RET_IF_ERR(pipe(pipe_fd_next));
 	}
 
-	if (pipe_fd_prev[0] >= 0) {
-		RET_IF_ERR(close(pipe_fd_prev[0]));
-		RET_IF_ERR(close(pipe_fd_prev[1]));
-	}
-	if (pipe_fd_next[0] >= 0) {
-		RET_IF_ERR(close(pipe_fd_next[0]));
-		RET_IF_ERR(close(pipe_fd_next[1]));
-	}
+	RET_IF_ERR(close_all_pipes());
 
-	while (proc_cnt) {
+	while (proc_cnt && !is_end) {
 		wait(NULL);
 		proc_cnt--;
 	}
@@ -287,6 +338,7 @@ int main(int argc, char *argv[])
 		GOTO_IF_ERR(block_sigint(), ret, err);
 
 		GOTO_IF_ERR(read_input(&raw_input), ret, err);
+		record_cmd(raw_input);
 		if (strncmp(raw_input, "\n", 1) == 0 || is_end) {
 			free(raw_input);
 			raw_input = NULL;
@@ -297,14 +349,12 @@ int main(int argc, char *argv[])
 		GOTO_IF_ERR(unblock_sigint(), ret, err);
 		GOTO_IF_ERR(run_cmds(args_arr), ret, err);
 
-		/* never return */
 		if (!pid)
 			GOTO_IF_ERR(execvp(args[0], args), ret, err);
 		if (pid != -1)
 			GOTO_IF_ERR(wait(NULL), ret, err);
 
 		free_resources(&args_arr, &raw_input);
-		GOTO_IF_ERR(printf("\n"), ret, err);
 	}
 
 	exit(0);
