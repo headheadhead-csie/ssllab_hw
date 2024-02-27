@@ -185,7 +185,7 @@ int run_builtin_cmd(char **args)
 {
 	int argc = 0;
 
-	for (char **arg_ptr; *arg_ptr; arg_ptr++)
+	for (char **arg_ptr = args; *arg_ptr; arg_ptr++)
 		argc++;
 	if (strncmp(args[0], "cd", 2) == 0) {
 		if (argc == 2)
@@ -212,36 +212,38 @@ int run_builtin_cmd(char **args)
 
 int run_cmds(char ***args_arr)
 {
-	int pid, ret;
+	int pid, ret, proc_cnt = 0;
 	int pipe_fds[2][2] = {{-1, -1}, {-1, -1}};
 	int *pipe_fd_prev = pipe_fds[0], *pipe_fd_next = pipe_fds[1], *tmp;
-	char ***cmd_window = (char ***)malloc(sizeof(char**) * 2);
+	char ***cmd_window;
 
 	RET_IF_ERR(pipe(pipe_fd_next));
 
 	for (cmd_window = args_arr; cmd_window[0]; cmd_window++) {
-		if (pipe_fd_prev[0] >= 0) {
-			RET_IF_ERR(dup2(pipe_fd_prev[0], 0));
-			RET_IF_ERR(close(pipe_fd_prev[0]));
-			RET_IF_ERR(close(pipe_fd_prev[1]));
-			pipe_fd_prev[1] = pipe_fd_prev[1] = -1;
-		}
-		if (pipe_fd_next[1] >= 0 && cmd_window[1])
-			RET_IF_ERR(dup2(pipe_fd_next[1], 1));
-
 		ret = run_builtin_cmd(cmd_window[0]);
 		if (ret == CMD_EXIT) {
 			break;
 		} else if (ret == CMD_FAIL) {
 			fprintf(stderr, "%s: arguments number incorrect\n", cmd_window[0][0]);
-	printf("hi\n");
 		} else if (ret == CMD_EXEC) {
 			RET_IF_ERR(pid = fork());
 			if (!pid) {
+				if (pipe_fd_prev[0] >= 0) {
+					RET_IF_ERR(dup2(pipe_fd_prev[0], 0));
+					RET_IF_ERR(close(pipe_fd_prev[0]));
+					RET_IF_ERR(close(pipe_fd_prev[1]));
+				}
+				if (pipe_fd_next[1] >= 0 && cmd_window[1])
+					RET_IF_ERR(dup2(pipe_fd_next[1], 1));
 				RET_IF_ERR(close(pipe_fd_next[0]));
 				RET_IF_ERR(close(pipe_fd_next[1]));
 				RET_IF_ERR(execvp(cmd_window[0][0], cmd_window[0]));
+			} else if (pipe_fd_prev[0] >= 0) {
+				RET_IF_ERR(close(pipe_fd_prev[0]));
+				RET_IF_ERR(close(pipe_fd_prev[1]));
+				pipe_fd_prev[1] = pipe_fd_prev[1] = -1;
 			}
+			proc_cnt++;
 		}
 		tmp = pipe_fd_prev;
 		pipe_fd_prev = pipe_fd_next;
@@ -258,6 +260,10 @@ int run_cmds(char ***args_arr)
 		RET_IF_ERR(close(pipe_fd_next[1]));
 	}
 
+	while (proc_cnt) {
+		wait(NULL);
+		proc_cnt--;
+	}
 	return 0;
 }
 
@@ -281,7 +287,7 @@ int main(int argc, char *argv[])
 		GOTO_IF_ERR(block_sigint(), ret, err);
 
 		GOTO_IF_ERR(read_input(&raw_input), ret, err);
-		if (strncmp(raw_input, "\n", 1) == 0) {
+		if (strncmp(raw_input, "\n", 1) == 0 || is_end) {
 			free(raw_input);
 			raw_input = NULL;
 			continue;
