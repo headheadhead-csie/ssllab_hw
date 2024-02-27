@@ -173,38 +173,89 @@ int read_input(char **raw_input_ptr)
 	return 0;
 }
 
+int print_history()
+{
+	return 0;
+}
+
+#define CMD_EXIT 1
+#define CMD_FAIL 2
+#define CMD_EXEC 3
+int run_builtin_cmd(char **args) 
+{
+	int argc = 0;
+
+	for (char **arg_ptr; *arg_ptr; arg_ptr++)
+		argc++;
+	if (strncmp(args[0], "cd", 2) == 0) {
+		if (argc == 2)
+			RET_IF_ERR(chdir(args[1]));
+		else
+			return CMD_FAIL;
+	} else if (strncmp(args[0], "exit", 4) == 0) {
+		if (argc == 1) {
+			is_end = true;
+			return CMD_EXIT;
+		} else
+			return CMD_FAIL;
+	} else if (strncmp(args[0], "history", 6) == 0) {
+		if (argc <= 2)
+			return print_history();
+		else
+			return CMD_FAIL;
+	} else {
+		return CMD_EXEC;
+	}
+
+	return 0;
+}
+
 int run_cmds(char ***args_arr)
 {
-	int pid;
-	int pipe_fd[2];
-	char ***cmd_window = (char ***)malloc(sizeof(char**) * 3);
+	int pid, ret;
+	int pipe_fds[2][2] = {{-1, -1}, {-1, -1}};
+	int *pipe_fd_prev = pipe_fds[0], *pipe_fd_next = pipe_fds[1], *tmp;
+	char ***cmd_window = (char ***)malloc(sizeof(char**) * 2);
 
-	RET_IF_ERR(pipe(pipe_fd));
-	RET_IF_ERR(pid = fork());
+	RET_IF_ERR(pipe(pipe_fd_next));
 
-	/* Wrong logic, need refinement  */
 	for (cmd_window = args_arr; cmd_window[0]; cmd_window++) {
-		if (cmd_window[1]) {
-			if (!pid) { /* old child */
-				RET_IF_ERR(dup2(pipe_fd[1], 1));
-				RET_IF_ERR(close(pipe_fd[0]));
-				RET_IF_ERR(close(pipe_fd[1]));
-				RET_IF_ERR(execvp(cmd_window[0][0], cmd_window[0]));
-			} else {
-				RET_IF_ERR(pid = fork());
-				if (!pid) /* new chlid */
-					RET_IF_ERR(dup2(pipe_fd[0], 0));
-			}
-			RET_IF_ERR(pipe(pipe_fd));
-		} else if (!pid) { /* old child, the final command */
-			RET_IF_ERR(close(pipe_fd[0]));
-			RET_IF_ERR(close(pipe_fd[1]));
-			RET_IF_ERR(execvp(cmd_window[0][0], cmd_window[0]));
+		if (pipe_fd_prev[0] >= 0) {
+			RET_IF_ERR(dup2(pipe_fd_prev[0], 0));
+			RET_IF_ERR(close(pipe_fd_prev[0]));
+			RET_IF_ERR(close(pipe_fd_prev[1]));
+			pipe_fd_prev[1] = pipe_fd_prev[1] = -1;
 		}
-		RET_IF_ERR(close(pipe_fd[0]));
-		RET_IF_ERR(close(pipe_fd[1]));
-		if (cmd_window[1])
-			RET_IF_ERR(pipe(pipe_fd));
+		if (pipe_fd_next[1] >= 0 && cmd_window[1])
+			RET_IF_ERR(dup2(pipe_fd_next[1], 1));
+
+		ret = run_builtin_cmd(cmd_window[0]);
+		if (ret == CMD_EXIT) {
+			break;
+		} else if (ret == CMD_FAIL) {
+			fprintf(stderr, "%s: arguments number incorrect\n", cmd_window[0][0]);
+	printf("hi\n");
+		} else if (ret == CMD_EXEC) {
+			RET_IF_ERR(pid = fork());
+			if (!pid) {
+				RET_IF_ERR(close(pipe_fd_next[0]));
+				RET_IF_ERR(close(pipe_fd_next[1]));
+				RET_IF_ERR(execvp(cmd_window[0][0], cmd_window[0]));
+			}
+		}
+		tmp = pipe_fd_prev;
+		pipe_fd_prev = pipe_fd_next;
+		pipe_fd_next = tmp;
+		RET_IF_ERR(pipe(pipe_fd_next));
+	}
+
+	if (pipe_fd_prev[0] >= 0) {
+		RET_IF_ERR(close(pipe_fd_prev[0]));
+		RET_IF_ERR(close(pipe_fd_prev[1]));
+	}
+	if (pipe_fd_next[0] >= 0) {
+		RET_IF_ERR(close(pipe_fd_next[0]));
+		RET_IF_ERR(close(pipe_fd_next[1]));
 	}
 
 	return 0;
@@ -238,14 +289,7 @@ int main(int argc, char *argv[])
 		GOTO_IF_ERR(parse_cmds(raw_input, &args_arr), ret, err);
 
 		GOTO_IF_ERR(unblock_sigint(), ret, err);
-		if (strncmp(args[0], "cd", 2) == 0)
-			GOTO_IF_ERR(chdir(args[1]), ret, err);
-		else if (strncmp(args[0], "exit", 4) == 0)
-			break;
-		else if (strncmp(args[0], "getcpu", 6) == 0)
-			GOTO_IF_ERR(printf("%ld\n", syscall(436)), ret, err);
-		else
-			GOTO_IF_ERR(run_cmds(args_arr), ret, err);
+		GOTO_IF_ERR(run_cmds(args_arr), ret, err);
 
 		/* never return */
 		if (!pid)
