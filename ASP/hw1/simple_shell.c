@@ -117,7 +117,7 @@ int close_all_pipes()
 	return 0;
 }
 
-void free_resources(char ****args_arr_ptr, char **raw_input_ptr)
+int free_resources(char ****args_arr_ptr, char **raw_input_ptr)
 {
 	close_all_pipes();
 	if (*raw_input_ptr) {
@@ -125,34 +125,14 @@ void free_resources(char ****args_arr_ptr, char **raw_input_ptr)
 		*raw_input_ptr = NULL;
 	}
 	free_args_arr(args_arr_ptr);
+
+	return 0;
 }
 
 void signal_handler(int signum)
 {
 	is_end = true;
 	printf("signal is handled!\n");
-}
-
-int block_sigint(void)
-{
-	sigset_t set;
-
-	RET_IF_ERR(sigemptyset(&set));
-	RET_IF_ERR(sigaddset(&set, SIGINT));
-	RET_IF_ERR(sigprocmask(SIG_BLOCK, &set, NULL));
-
-	return 0;
-}
-
-int unblock_sigint(void)
-{
-	sigset_t set;
-
-	RET_IF_ERR(sigemptyset(&set));
-	RET_IF_ERR(sigaddset(&set, SIGINT));
-	RET_IF_ERR(sigprocmask(SIG_UNBLOCK, &set, NULL));
-
-	return 0;
 }
 
 int read_input(char **raw_input_ptr)
@@ -162,10 +142,8 @@ int read_input(char **raw_input_ptr)
 	int raw_input_size = 1024;
 
 	*raw_input_ptr = malloc(raw_input_size);
-	RET_IF_ERR(unblock_sigint());
 	while ((ch = getchar()) != EOF && !is_end) {
 		RET_IF_ERR(ch);
-		RET_IF_ERR(block_sigint());
 
 		if (raw_input_len+1 >= raw_input_size) {
 			raw_input_size *= 2;
@@ -174,15 +152,13 @@ int read_input(char **raw_input_ptr)
 		if (!*raw_input_ptr)
 			return -1;
 		(*raw_input_ptr)[raw_input_len++] = ch;
-		RET_IF_ERR(unblock_sigint());
 		if (ch == '\n')
 			break;
 	}
 	(*raw_input_ptr)[raw_input_len] = '\0';
 
 	if (is_end)
-		return -EINTR;
-	RET_IF_ERR(block_sigint());
+		return 0;
 	is_end = (ch == EOF);
 	return 0;
 }
@@ -320,10 +296,9 @@ int run_cmds(char ***args_arr)
 
 int main(int argc, char *argv[])
 {
-	int ret, pid;
+	int ret;
 	char *raw_input = NULL;
 	char ***args_arr = NULL;
-	char **args = NULL;
 	struct sigaction sigint_action;
 
 	sigint_action.sa_handler = signal_handler;
@@ -333,9 +308,7 @@ int main(int argc, char *argv[])
 	GOTO_IF_ERR(sigaction(SIGINT, &sigint_action, NULL), ret, err);
 
 	while (!is_end) {
-		pid = -1;
 		GOTO_IF_ERR(printf("$"), ret, err);
-		GOTO_IF_ERR(block_sigint(), ret, err);
 
 		GOTO_IF_ERR(read_input(&raw_input), ret, err);
 		record_cmd(raw_input);
@@ -346,13 +319,7 @@ int main(int argc, char *argv[])
 		}
 		GOTO_IF_ERR(parse_cmds(raw_input, &args_arr), ret, err);
 
-		GOTO_IF_ERR(unblock_sigint(), ret, err);
 		GOTO_IF_ERR(run_cmds(args_arr), ret, err);
-
-		if (!pid)
-			GOTO_IF_ERR(execvp(args[0], args), ret, err);
-		if (pid != -1)
-			GOTO_IF_ERR(wait(NULL), ret, err);
 
 		free_resources(&args_arr, &raw_input);
 	}
