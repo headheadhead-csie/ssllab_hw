@@ -245,18 +245,18 @@ int run_builtin_cmd(char **args)
 
 	for (char **arg_ptr = args; *arg_ptr; arg_ptr++)
 		argc++;
-	if (strncmp(args[0], "cd", 2) == 0) {
+	if (strcmp(args[0], "cd") == 0) {
 		if (argc == 2)
 			RET_IF_ERR(chdir(args[1]));
 		else
 			return CMD_FAIL;
-	} else if (strncmp(args[0], "exit", 4) == 0) {
+	} else if (strcmp(args[0], "exit") == 0) {
 		if (argc == 1) {
 			is_end = true;
 			return CMD_EXIT;
 		} else
 			return CMD_FAIL;
-	} else if (strncmp(args[0], "history", 6) == 0) {
+	} else if (strcmp(args[0], "history") == 0) {
 		if (argc <= 2)
 			return print_history(args[1]);
 		else
