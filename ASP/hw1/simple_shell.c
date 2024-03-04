@@ -277,6 +277,7 @@ int run_cmds(char ***args_arr)
 				if (ret == CMD_EXEC) {
 					RET_IF_ERR(execv(cmd_window[0][0], cmd_window[0]));
 				} else {
+					history_n = get_history_n(cmd_window[0][1]);
 					for (int i = cmd_cnt - history_n; i < cmd_cnt; i++)
 						RET_IF_ERR(printf("%5d  %s", i+1, cmd_history[i % 10]));
 				}
