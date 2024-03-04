@@ -174,9 +174,18 @@ void record_cmd(char *raw_input)
 	cmd_history[cmd_cnt++ % 10] = strdup(raw_input);
 }
 
-int do_history(char *args_1)
+int get_history_n(char *args_1)
 {
 	int n = 10;
+	if (args_1)
+		n = atoi(args_1);
+	return (n > 10)? 10:
+			(n > cmd_cnt)? cmd_cnt: n;
+}
+
+int do_history(char *args_1)
+{
+	int n;
 
 	if (args_1) {
 		if (strcmp(args_1, "-c") == 0) {
@@ -195,25 +204,20 @@ int do_history(char *args_1)
 				return -EINVAL;
 			}
 		}
-		n = atoi(args_1);
 	}
 
-	n = (n > 10)? 10: n;
-	n = (n > cmd_cnt)? cmd_cnt: n;
-
+	n = get_history_n(args_1);
 	if (n <= 0) {
 		fprintf(stderr, "error: history: invalid argument \"%s\"\n", args_1);
 		return -EINVAL;
 	}
-	for (int i = cmd_cnt - n; i < cmd_cnt; i++)
-		printf("%5d  %s", i+1, cmd_history[i % 10]);
-
 	return 0;
 }
 
 #define CMD_EXIT 1
 #define CMD_FAIL 2
 #define CMD_EXEC 3
+#define CMD_PRINT_HISTORY 4
 int run_builtin_cmd(char **args) 
 {
 	int argc = 0;
@@ -245,7 +249,7 @@ int run_builtin_cmd(char **args)
 
 int run_cmds(char ***args_arr)
 {
-	int pid, ret, proc_cnt = 0;
+	int history_n, pid, ret, proc_cnt = 0;
 	int *pipe_fd_prev = pipe_fds[0], *pipe_fd_next = pipe_fds[1], *tmp;
 	char ***cmd_window;
 
@@ -258,7 +262,7 @@ int run_cmds(char ***args_arr)
 			break;
 		} else if (ret == CMD_FAIL) {
 			fprintf(stderr, "error: %s: arguments number incorrect\n", cmd_window[0][0]);
-		} else if (ret == CMD_EXEC) {
+		} else if (ret == CMD_EXEC || ret == CMD_PRINT_HISTORY) {
 			RET_IF_ERR(pid = fork());
 			if (!pid) {
 				if (pipe_fd_prev[0] >= 0) {
@@ -270,7 +274,12 @@ int run_cmds(char ***args_arr)
 					RET_IF_ERR(dup2(pipe_fd_next[1], 1));
 				RET_IF_ERR(close(pipe_fd_next[0]));
 				RET_IF_ERR(close(pipe_fd_next[1]));
-				RET_IF_ERR(execv(cmd_window[0][0], cmd_window[0]));
+				if (ret == CMD_EXEC) {
+					RET_IF_ERR(execv(cmd_window[0][0], cmd_window[0]));
+				} else {
+					for (int i = cmd_cnt - history_n; i < cmd_cnt; i++)
+						RET_IF_ERR(printf("%5d  %s", i+1, cmd_history[i % 10]));
+				}
 			} else if (pipe_fd_prev[0] >= 0) {
 				RET_IF_ERR(close(pipe_fd_prev[0]));
 				RET_IF_ERR(close(pipe_fd_prev[1]));
