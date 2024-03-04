@@ -174,7 +174,7 @@ void record_cmd(char *raw_input)
 	cmd_history[cmd_cnt++ % 10] = strdup(raw_input);
 }
 
-int print_history(char *args_1)
+int do_history(char *args_1)
 {
 	int n = 10;
 
@@ -191,7 +191,7 @@ int print_history(char *args_1)
 		}
 		for (char *ch_ptr = args_1; *ch_ptr; ch_ptr++) {
 			if (!isdigit(*ch_ptr)) {
-				fprintf(stderr, "history: invalid argument \"%s\"\n", args_1);
+				fprintf(stderr, "error: history: invalid argument \"%s\"\n", args_1);
 				return -EINVAL;
 			}
 		}
@@ -202,7 +202,7 @@ int print_history(char *args_1)
 	n = (n > cmd_cnt)? cmd_cnt: n;
 
 	if (n <= 0) {
-		fprintf(stderr, "history: invalid argument \"%s\"\n", args_1);
+		fprintf(stderr, "error: history: invalid argument \"%s\"\n", args_1);
 		return -EINVAL;
 	}
 	for (int i = cmd_cnt - n; i < cmd_cnt; i++)
@@ -233,7 +233,7 @@ int run_builtin_cmd(char **args)
 			return CMD_FAIL;
 	} else if (strcmp(args[0], "history") == 0) {
 		if (argc <= 2)
-			return print_history(args[1]);
+			return do_history(args[1]);
 		else
 			return CMD_FAIL;
 	} else {
@@ -257,7 +257,7 @@ int run_cmds(char ***args_arr)
 		if (ret == CMD_EXIT) {
 			break;
 		} else if (ret == CMD_FAIL) {
-			fprintf(stderr, "Error: %s: arguments number incorrect\n", cmd_window[0][0]);
+			fprintf(stderr, "error: %s: arguments number incorrect\n", cmd_window[0][0]);
 		} else if (ret == CMD_EXEC) {
 			RET_IF_ERR(pid = fork());
 			if (!pid) {
