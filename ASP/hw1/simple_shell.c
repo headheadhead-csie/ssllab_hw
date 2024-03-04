@@ -174,6 +174,10 @@ void record_cmd(char *raw_input)
 	cmd_history[cmd_cnt++ % 10] = strdup(raw_input);
 }
 
+#define CMD_EXIT 1
+#define CMD_FAIL 2
+#define CMD_EXEC 3
+#define CMD_PRINT_HISTORY 4
 int get_history_n(char *args_1)
 {
 	int n = 10;
@@ -211,13 +215,9 @@ int do_history(char *args_1)
 		fprintf(stderr, "error: history: invalid argument \"%s\"\n", args_1);
 		return -EINVAL;
 	}
-	return 0;
+	return CMD_PRINT_HISTORY;
 }
 
-#define CMD_EXIT 1
-#define CMD_FAIL 2
-#define CMD_EXEC 3
-#define CMD_PRINT_HISTORY 4
 int run_builtin_cmd(char **args) 
 {
 	int argc = 0;
@@ -280,6 +280,7 @@ int run_cmds(char ***args_arr)
 					history_n = get_history_n(cmd_window[0][1]);
 					for (int i = cmd_cnt - history_n; i < cmd_cnt; i++)
 						RET_IF_ERR(printf("%5d  %s", i+1, cmd_history[i % 10]));
+					exit(0);
 				}
 			} else if (pipe_fd_prev[0] >= 0) {
 				RET_IF_ERR(close(pipe_fd_prev[0]));
