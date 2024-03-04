@@ -183,8 +183,9 @@ int get_history_n(char *args_1)
 	int n = 10;
 	if (args_1)
 		n = atoi(args_1);
-	return (n > 10)? 10:
-			(n > cmd_cnt)? cmd_cnt: n;
+	n = (n > 10)? 10: n;
+	n = (n > cmd_cnt)? cmd_cnt: n;
+	return n;
 }
 
 int do_history(char *args_1)
