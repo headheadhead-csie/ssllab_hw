@@ -270,7 +270,7 @@ int run_cmds(char ***args_arr)
 					RET_IF_ERR(dup2(pipe_fd_next[1], 1));
 				RET_IF_ERR(close(pipe_fd_next[0]));
 				RET_IF_ERR(close(pipe_fd_next[1]));
-				RET_IF_ERR(execvp(cmd_window[0][0], cmd_window[0]));
+				RET_IF_ERR(execv(cmd_window[0][0], cmd_window[0]));
 			} else if (pipe_fd_prev[0] >= 0) {
 				RET_IF_ERR(close(pipe_fd_prev[0]));
 				RET_IF_ERR(close(pipe_fd_prev[1]));
