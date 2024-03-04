@@ -136,7 +136,7 @@ void signal_handler(int signum)
 
 int read_input(char **raw_input_ptr)
 {
-	char ch;
+	int ch;
 	int raw_input_len = 0;
 	int raw_input_size = 1024;
 
