@@ -132,7 +132,6 @@ int free_resources(char ****args_arr_ptr, char **raw_input_ptr)
 void signal_handler(int signum)
 {
 	is_end = true;
-	printf("signal is handled!\n");
 }
 
 int read_input(char **raw_input_ptr)
@@ -165,13 +164,13 @@ int read_input(char **raw_input_ptr)
 
 void record_cmd(char *raw_input)
 {
-	if (cmd_cnt >= 0 &&
-		cmd_history[(cmd_cnt-1) % 10] &&
-		strcmp(raw_input, cmd_history[(cmd_cnt-1) % 10]) == 0)
+	if (cmd_cnt > 0 &&
+	    cmd_history[(cmd_cnt-1) % 10] &&
+	    strcmp(raw_input, cmd_history[(cmd_cnt-1) % 10]) == 0)
 		return;
-	if (cmd_history[cmd_cnt % 10]) {
+	if (cmd_history[cmd_cnt % 10])
 		free(cmd_history[cmd_cnt % 10]);
-	}
+
 	cmd_history[cmd_cnt++ % 10] = strdup(raw_input);
 }
 
@@ -207,7 +206,7 @@ int print_history(char *args_1)
 		return -EINVAL;
 	}
 	for (int i = cmd_cnt - n; i < cmd_cnt; i++)
-		printf("%5d: %s", i+1, cmd_history[i % 10]);
+		printf("%5d  %s", i+1, cmd_history[i % 10]);
 
 	return 0;
 }
@@ -258,7 +257,7 @@ int run_cmds(char ***args_arr)
 		if (ret == CMD_EXIT) {
 			break;
 		} else if (ret == CMD_FAIL) {
-			fprintf(stderr, "%s: arguments number incorrect\n", cmd_window[0][0]);
+			fprintf(stderr, "Error: %s: arguments number incorrect\n", cmd_window[0][0]);
 		} else if (ret == CMD_EXEC) {
 			RET_IF_ERR(pid = fork());
 			if (!pid) {
