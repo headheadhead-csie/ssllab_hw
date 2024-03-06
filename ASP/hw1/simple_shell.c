@@ -226,7 +226,7 @@ int run_builtin_cmd(char **args)
 	for (char **arg_ptr = args; *arg_ptr; arg_ptr++)
 		argc++;
 	if (strcmp(args[0], "cd") == 0) {
-		if (argc == 2)
+		if (argc == 2 && args[1][0] == '/')
 			RET_IF_ERR(chdir(args[1]));
 		else
 			return CMD_FAIL;
@@ -262,7 +262,7 @@ int run_cmds(char ***args_arr)
 		if (ret == CMD_EXIT) {
 			break;
 		} else if (ret == CMD_FAIL) {
-			fprintf(stderr, "error: %s: arguments number incorrect\n", cmd_window[0][0]);
+			fprintf(stderr, "error: %s: invalid argument(s)\n", cmd_window[0][0]);
 		} else if (ret == CMD_EXEC || ret == CMD_PRINT_HISTORY) {
 			RET_IF_ERR(pid = fork());
 			if (!pid) {
