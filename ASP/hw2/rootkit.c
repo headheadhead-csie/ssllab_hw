@@ -37,7 +37,21 @@ static int rootkit_release(struct inode *inode, struct file *filp)
 static long rootkit_ioctl(struct file *filp, unsigned int ioctl,
 			  unsigned long arg)
 {
+	int ret;
 	pr_info("%s\n", __func__);
+
+	switch (ioctl) {
+	case IOCTL_MOD_HOOK:
+		break;
+	case IOCTL_MOD_HIDE:
+		break;
+	case IOCTL_MOD_MASQ:
+		break;
+	case IOCTL_FILE_HIDE:
+		break;
+	default:
+		ret = -EINVAL;
+	}
 	return 0;
 }
 
