@@ -14,8 +14,8 @@
 
 #define OURMODNAME "rootkit"
 
-MODULE_AUTHOR("FOOBAR");
-MODULE_DESCRIPTION("FOOBAR");
+MODULE_AUTHOR("R12922072");
+MODULE_DESCRIPTION("R12922072");
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_VERSION("0.1");
 
@@ -24,20 +24,20 @@ struct cdev *kernel_cdev;
 
 static int rootkit_open(struct inode *inode, struct file *filp)
 {
-	printk(KERN_INFO "%s\n", __func__);
+	pr_info("%s\n", __func__);
 	return 0;
 }
 
 static int rootkit_release(struct inode *inode, struct file *filp)
 {
-	printk(KERN_INFO "%s\n", __func__);
+	pr_info("%s\n", __func__);
 	return 0;
 }
 
 static long rootkit_ioctl(struct file *filp, unsigned int ioctl,
 			  unsigned long arg)
 {
-	printk(KERN_INFO "%s\n", __func__);
+	pr_info("%s\n", __func__);
 	return 0;
 }
 
@@ -65,10 +65,10 @@ static int __init rootkit_init(void)
 
 	major = MAJOR(dev_no);
 	dev = MKDEV(major, 0);
-	printk("The major number for your device is %d\n", major);
+	pr_info("The major number for your device is %d\n", major);
 	ret = cdev_add(kernel_cdev, dev, 1);
 	if (ret < 0) {
-		pr_info(KERN_INFO "unable to allocate cdev");
+		pr_info("unable to allocate cdev");
 		return ret;
 	}
 
