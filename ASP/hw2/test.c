@@ -37,7 +37,7 @@ int main()
 			req.list = malloc(sizeof(*req.list) * req.len);
 			for (int i = 0; i < req.len; i++) {
 				printf("Please enter the [old_name] [new_name]\n");
-				scanf("%s %s", req.list[i].new_name, req.list[i].orig_name);
+				scanf("%s %s", req.list[i].orig_name, req.list[i].new_name);
 			}
 			ioctl(fd, IOCTL_MOD_MASQ, &req);
 			break;

