@@ -210,9 +210,12 @@ static int masq_module(unsigned long arg)
 		new_len = strlen(new_name);
 		if (new_len >= orig_len)
 			continue;
-		for_each_process(p)
+		for_each_process(p) {
+			task_lock(p);
 			if (strncmp(p->comm, orig_name, orig_len) == 0)
 				strncpy(p->comm, new_name, sizeof(p->comm));
+			task_unlock(p);
+		}
 	}
 masq_break:
 	if (req)
