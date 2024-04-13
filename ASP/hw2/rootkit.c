@@ -336,7 +336,7 @@ static void __exit rootkit_exit(void)
 		sys_getdents64_orig,
 		sys_getrandom_orig,
 	};
-	modify_syscall_table(hook_arr,syscall_nr_arr, HOOKLEN);
+	modify_syscall_table(hook_arr, syscall_nr_arr, HOOKLEN);
 	cdev_del(kernel_cdev);
 	unregister_chrdev_region(major, 1);
 }
